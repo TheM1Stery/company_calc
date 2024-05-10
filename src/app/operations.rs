@@ -27,7 +27,6 @@ pub async fn add_company(
         _ => RemainderType::Debit,
     };
 
-    let mut sign = true;
     let remainder = match remainder_type {
         RemainderType::Debit => remainder_begin_month - credit_turnover,
         RemainderType::Credit => remainder_begin_month + debit_turnover,

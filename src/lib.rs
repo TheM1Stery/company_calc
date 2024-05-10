@@ -18,7 +18,17 @@ pub fn run(options: NativeOptions) -> Result<(), AppError> {
 
     let _enter = rt.enter();
 
-    let db = rt.block_on(database::get_pooled_connection("sqlite:test.db"));
+    let db = rt.block_on(database::get_pooled_connection("test.db"));
+
+    if let Err(err) = db {
+        return Err(AppError::StdError { error: Box::new(err)})
+    }
+
+    let copied_db = db.as_ref().unwrap().clone();
+
+    rt.block_on(async {
+        sqlx::migrate!().run(&copied_db).await
+    }).expect("Couldn't migrate");
 
 
     std::thread::spawn(move || {
@@ -29,10 +39,6 @@ pub fn run(options: NativeOptions) -> Result<(), AppError> {
         })
     });
 
-
-    if let Err(err) = db {
-        return Err(AppError::StdError { error: Box::new(err)})
-    }
 
 
     eframe::run_native(

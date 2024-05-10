@@ -20,8 +20,6 @@ pub fn map_to_new(
     };
     let parsed_remainder: f64 = remainder.parse()?;
 
-    println!("{parsed_remainder}");
-
     let parsed_debit: f64 = debit_turnover.parse()?;
 
     let parsed_credit: f64 = credit_turnover.parse()?;
