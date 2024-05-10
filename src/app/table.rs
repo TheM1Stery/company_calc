@@ -14,24 +14,11 @@ impl<'a> CompanyTable<'a> {
         }
     }
 
-    // pub fn start_adding_new_row<'a>(&'a mut self) {
-    //     self.is_new_row_being_added = true;
-    //     // self.new_row = Some(row);
-    // }
-    //
-    // pub fn finish_adding_new_row(&mut self) {
-    //     self.is_new_row_being_added = false;
-    // }
 
     pub fn table_ui(&mut self, ui: &mut egui::Ui) {
-        // let text_height = egui::TextStyle::Body
-        //     .resolve(ui.style())
-        //     .size
-        //     .max(ui.spacing().interact_size.y);
-
         let available_height = ui.available_height();
 
-        let mut builder = TableBuilder::new(ui)
+        let builder = TableBuilder::new(ui)
             .striped(true)
             .resizable(true)
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
@@ -66,34 +53,54 @@ impl<'a> CompanyTable<'a> {
                 let row_height = 18.0;
                 body.rows(row_height, self.rows.len(), |mut row| {
                     let index = row.index();
-                    row.col(|ui| {
-                        ui.label(format!("{index}"));
-                    });
                     match &mut self.rows[index] {
                         Row::Constant(company) => {
+                            row.col(|ui| {
+                                ui.label(format!("{}", company.id));
+                            });
                             row.col(|ui| {
                                 ui.label(&company.name);
                             });
                             row.col(|ui| {
                                 ui.columns(3, |columns| {
-                                    columns[0].label("salam");
+                                    let mut remainder = company.remainder_begin_month;
+                                    if remainder >= 0. {
+                                        columns[0].label(format!("{remainder}"));
+                                    }
                                     columns[1].add(egui::Separator::default().vertical());
-                                    columns[2].label("poka");
+                                    if remainder < 0. {
+                                        remainder *= -1.;
+                                        columns[2].label(format!("{remainder}"));
+                                    }
                                 });
                             });
                             row.col(|ui| {
                                 ui.columns(3, |columns| {
-                                    columns[0].label("siytir");
+                                    columns[0].label(format!("{}", company.debit_turnover));
                                     columns[1].add(egui::Separator::default().vertical());
-                                    columns[2].label("poka");
+                                    columns[2].label(format!("{}", company.credit_turnover));
                                 });
                             });
                             row.col(|ui| {
-                                ui.label("30");
+                                ui.columns(3, |columns| {
+                                    let mut remainder = company.remainder_end_month;
+                                    if remainder >= 0. {
+                                        columns[0].label(format!("{remainder}"));
+                                    }
+                                    columns[1].add(egui::Separator::default().vertical());
+                                    if remainder < 0. {
+                                        remainder *= -1.;
+                                        columns[2].label(format!("{remainder}"));
+                                    }
+                                })
                             });
                         },
                         Row::BeingEdited(_) => todo!(),
                         Row::New(new_company) => {
+                            row.col(|ui| {
+                                ui.label("");
+                            });
+
                             row.col(|ui| {
                                 ui.text_edit_singleline(&mut new_company.name);
                             });
@@ -103,12 +110,20 @@ impl<'a> CompanyTable<'a> {
                                 ui.columns(3, |columns| {
                                     if columns[0].text_edit_singleline(&mut new_company.remainder_begin_month_pos).changed(){
                                         new_company.remainder_begin_month_neg.clear();
-                                    };
+                                    }
 
                                     columns[1].add(egui::Separator::default().vertical());
                                     if columns[2].text_edit_singleline(&mut new_company.remainder_begin_month_neg).changed() {
                                         new_company.remainder_begin_month_pos.clear();
-                                    };
+                                    }
+                                });
+                            });
+
+                            row.col(|ui| {
+                                ui.columns(3, |columns| {
+                                    columns[0].text_edit_singleline(&mut new_company.debit_turnover);
+                                    columns[1].add(egui::Separator::default().vertical());
+                                    columns[2].text_edit_singleline(&mut new_company.credit_turnover);
                                 });
                             });
 

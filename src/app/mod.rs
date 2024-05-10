@@ -1,21 +1,23 @@
-use std::{
-    ops::Add,
-    sync::mpsc::{self, Receiver, Sender},
-};
+use std::sync::mpsc::{self, Receiver, Sender};
 
 use egui::ScrollArea;
 use sqlx::SqlitePool;
 
+mod map;
 mod model;
 mod operations;
 mod table;
-mod map;
 
-use self::{map::map_to_new, model::Company, table::CompanyTable};
+use self::{
+    map::map_to_new,
+    model::Company,
+    operations::{add_company, Operation},
+    table::CompanyTable,
+};
 
 pub struct MyApp {
-    tx: Sender<State>,
-    rx: Receiver<State>,
+    tx: Sender<Operation>,
+    rx: Receiver<Operation>,
     db: SqlitePool,
     state: State,
 }
@@ -28,7 +30,7 @@ enum Mode {
     Delete,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct EditedCompanyRow {
     pub id: i64,
     pub name: String,
@@ -37,7 +39,7 @@ pub struct EditedCompanyRow {
     pub credit_turnover: String,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct NewCompanyRow {
     pub name: String,
     pub remainder_begin_month_pos: String,
@@ -46,6 +48,7 @@ pub struct NewCompanyRow {
     pub credit_turnover: String,
 }
 
+#[derive(Debug)]
 pub enum Row {
     Constant(Company),
     BeingEdited(EditedCompanyRow),
@@ -94,8 +97,17 @@ impl eframe::App for MyApp {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // let state = &mut self.state;
-        if let Ok(new_state) = self.rx.try_recv() {
-            self.state = new_state;
+        if let Ok(op) = self.rx.try_recv() {
+            match op {
+                Operation::Add { new_companies } => {
+                    let mapped: Vec<_> = new_companies.into_iter().map(Row::Constant).collect();
+
+                    self.state.vec.retain(|x| matches!(x, Row::Constant(_)));
+
+                    self.state.vec.extend(mapped);
+                }
+                _ => todo!(),
+            }
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -119,7 +131,8 @@ impl eframe::App for MyApp {
             ui.horizontal(|ui| {
                 if let Mode::Add = &self.state.mode {
                     if ui.button("Save").clicked() {
-                        save_all(&mut self.state, self.tx.clone());
+                        save_all(self.db.clone(), &mut self.state, self.tx.clone());
+                        self.state.mode = Mode::Normal;
                     }
                 }
 
@@ -136,14 +149,24 @@ fn add_row(state: &mut State) {
     state.vec.push(Row::New(NewCompanyRow::default()));
 }
 
-fn save_all(state: &mut State, tx: Sender<State>){
-    let new_rows: Vec<_> = state.vec.iter().filter_map(|e| match e {
-        Row::New(row) => Some(row),
-        _ => None
-    })
-    .map(map_to_new)
-    .collect();
+fn save_all(db: SqlitePool, state: &mut State, tx: Sender<Operation>) {
+    let new_rows: Vec<_> = state
+        .vec
+        .iter()
+        .filter_map(|e| match e {
+            Row::New(row) => Some(row),
+            _ => None,
+        })
+        .flat_map(map_to_new)
+        .collect();
 
     tokio::spawn(async move {
+        let mut vec = Vec::new();
+        for row in new_rows {
+            let item = add_company(db.clone(), row).await;
+            vec.push(item.unwrap());
+        }
+
+        tx.send(Operation::Add { new_companies: vec })
     });
 }

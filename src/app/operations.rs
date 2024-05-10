@@ -3,7 +3,7 @@ use sqlx::SqlitePool;
 use super::model::{Company, NewCompany};
 
 pub enum Operation {
-    Add { new_companies: Vec<Company>},
+    Add { new_companies: Vec<Company> },
     Edit { edited_company: Company },
 }
 
@@ -20,12 +20,14 @@ pub async fn add_company(
         debit_turnover,
         credit_turnover,
     }: NewCompany,
-) -> Result<Company, Box<dyn std::error::Error>> {
+) -> Result<Company, sqlx::Error> {
     let remainder_type = match remainder_begin_month {
         v if v > 0. => RemainderType::Debit,
         v if v < 0. => RemainderType::Credit,
         _ => RemainderType::Debit,
     };
+
+    let mut sign = true;
     let remainder = match remainder_type {
         RemainderType::Debit => remainder_begin_month - credit_turnover,
         RemainderType::Credit => remainder_begin_month + debit_turnover,
