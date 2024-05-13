@@ -11,7 +11,7 @@ mod table;
 use self::{
     map::map_to_new,
     model::Company,
-    operations::{add_company, Operation},
+    operations::{add_company, get_all_companies, Operation},
     table::CompanyTable,
 };
 
@@ -62,6 +62,8 @@ pub struct State {
     vec: Vec<Row>,
 
     mode: Mode,
+
+    was_fetched_on_start: bool,
 }
 
 impl Default for State {
@@ -69,6 +71,7 @@ impl Default for State {
         Self {
             vec: Default::default(),
             mode: Mode::Normal,
+            was_fetched_on_start: false,
         }
     }
 }
@@ -97,21 +100,32 @@ impl eframe::App for MyApp {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // let state = &mut self.state;
+        if !self.state.was_fetched_on_start {
+            fetch_all(self.db.clone(), self.tx.clone());
+            self.state.was_fetched_on_start = true;
+        }
         if let Ok(op) = self.rx.try_recv() {
             match op {
                 Operation::Add { new_companies } => {
-                    let mapped: Vec<_> = new_companies.into_iter().map(Row::Constant).collect();
+                    let mapped_into_constant: Vec<_> =
+                        new_companies.into_iter().map(Row::Constant).collect();
 
-                    self.state.vec.retain(|x| matches!(x, Row::Constant(_)));
+                    remove_non_constant(&mut self.state.vec);
 
-                    self.state.vec.extend(mapped);
+                    self.state.vec.extend(mapped_into_constant);
+                }
+                Operation::FetchAll { all_companies } => {
+                    if let Ok(companies) = all_companies {
+                        self.state.vec = companies.into_iter().map(Row::Constant).collect();
+                    }
                 }
                 _ => todo!(),
             }
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let mut table = CompanyTable::new(&mut self.state.vec);
+        let top_panel = egui::TopBottomPanel::top("top_panel").show_separator_line(false);
+
+        top_panel.show(ctx, |ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     ui.columns(2, |columns| {
@@ -123,22 +137,31 @@ impl eframe::App for MyApp {
                         });
                     });
                 });
-                ScrollArea::horizontal().show(ui, |ui| {
-                    table.table_ui(ui);
-                })
             });
+        });
 
-            ui.horizontal(|ui| {
-                if let Mode::Add = &self.state.mode {
-                    if ui.button("Save").clicked() {
-                        save_all(self.db.clone(), &mut self.state, self.tx.clone());
-                        self.state.mode = Mode::Normal;
-                    }
-                }
-
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.vertical(|ui| {
                 if ui.button("Add row").clicked() {
                     add_row(&mut self.state);
                 }
+                let mut table = CompanyTable::new(&mut self.state.vec);
+                ScrollArea::horizontal().show(ui, |ui| {
+                    table.table_ui(ui);
+                });
+                ui.horizontal(|ui| {
+                    if let Mode::Add = &self.state.mode {
+                        if ui.button("Save").clicked() {
+                            save_all(self.db.clone(), &mut self.state, self.tx.clone());
+                            self.state.mode = Mode::Normal;
+                        }
+                    }
+
+                    if !matches!(self.state.mode, Mode::Normal) && ui.button("Cancel").clicked() {
+                        remove_non_constant(&mut self.state.vec);
+                        self.state.mode = Mode::Normal;
+                    }
+                })
             });
         });
     }
@@ -147,6 +170,18 @@ impl eframe::App for MyApp {
 fn add_row(state: &mut State) {
     state.mode = Mode::Add;
     state.vec.push(Row::New(NewCompanyRow::default()));
+}
+
+fn remove_non_constant(vec: &mut Vec<Row>) {
+    vec.retain(|x| matches!(x, Row::Constant(_)))
+}
+
+fn fetch_all(db: SqlitePool, tx: Sender<Operation>) {
+    tokio::spawn(async move {
+        let all_companies = get_all_companies(db.clone()).await;
+
+        tx.send(Operation::FetchAll { all_companies })
+    });
 }
 
 fn save_all(db: SqlitePool, state: &mut State, tx: Sender<Operation>) {
@@ -162,6 +197,8 @@ fn save_all(db: SqlitePool, state: &mut State, tx: Sender<Operation>) {
 
     tokio::spawn(async move {
         let mut vec = Vec::new();
+
+        // TODO: needs to be rewritten to use JoinSet
         for row in new_rows {
             let item = add_company(db.clone(), row).await;
             vec.push(item.unwrap());
