@@ -9,16 +9,17 @@ pub fn map_to_new(
         credit_turnover,
     }: &NewCompanyRow,
 ) -> Result<NewCompany, Box<dyn std::error::Error>> {
-    // need to get rid of allocation, this is bad
-    let remainder = match (
+    let new_remainder: f64 = match (
         remainder_begin_month_pos.as_str(),
         remainder_begin_month_neg.as_str(),
     ) {
-        (first, "") => first.to_string(),
-        ("", second) => format!("-{second}"),
-        _ => String::new(),
+        (first, "") => first.parse()?,
+        ("", second) => {
+            let parsed: f64 = second.parse()?;
+            parsed * -1.0
+        }
+        _ => 0.0,
     };
-    let parsed_remainder: f64 = remainder.parse()?;
 
     let parsed_debit: f64 = debit_turnover.parse()?;
 
@@ -26,7 +27,7 @@ pub fn map_to_new(
 
     Ok(NewCompany {
         name: name.to_string(),
-        remainder_begin_month: parsed_remainder,
+        remainder_begin_month: new_remainder,
         debit_turnover: parsed_debit,
         credit_turnover: parsed_credit,
     })
