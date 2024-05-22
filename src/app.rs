@@ -1,8 +1,8 @@
 use std::sync::mpsc::{self, Receiver, Sender};
 
-use egui::ScrollArea;
 use sqlx::SqlitePool;
 
+mod exports;
 mod map;
 mod model;
 mod operations;
@@ -11,7 +11,7 @@ mod table;
 use self::{
     map::map_to_new,
     model::Company,
-    operations::{add_company, get_all_companies, Operation},
+    operations::{add_company, delete_company, get_all_companies, Operation},
     table::CompanyTable,
 };
 
@@ -34,7 +34,8 @@ enum Mode {
 pub struct EditedCompanyRow {
     pub id: i64,
     pub name: String,
-    pub remainder_begin_month: String,
+    pub remainder_begin_month_pos: String,
+    pub remainder_begin_month_neg: String,
     pub debit_turnover: String,
     pub credit_turnover: String,
 }
@@ -56,6 +57,16 @@ pub enum Row {
     Total,
 }
 
+impl Row {
+    fn constant(&self) -> &Company {
+        if let Row::Constant(company) = self {
+            company
+        } else {
+            panic!("Not a constant row");
+        }
+    }
+}
+
 // #[derive(serde::Deserialize, serde::Serialize)]
 pub struct State {
     // #[serde(skip)]
@@ -64,6 +75,8 @@ pub struct State {
     mode: Mode,
 
     was_fetched_on_start: bool,
+
+    selected_rows: std::collections::HashSet<usize>,
 }
 
 impl Default for State {
@@ -72,6 +85,7 @@ impl Default for State {
             vec: Default::default(),
             mode: Mode::Normal,
             was_fetched_on_start: false,
+            selected_rows: Default::default(),
         }
     }
 }
@@ -119,6 +133,13 @@ impl eframe::App for MyApp {
                         self.state.vec = companies.into_iter().map(Row::Constant).collect();
                     }
                 }
+                Operation::Delete { deleted_companies } => {
+                    self.state.vec.retain(|x| {
+                        !(matches!(x, Row::Constant(_))
+                            && deleted_companies.contains(&x.constant().id))
+                    });
+                    self.state.selected_rows.clear();
+                }
                 _ => todo!(),
             }
         }
@@ -142,26 +163,48 @@ impl eframe::App for MyApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
-                if ui.button("Add row").clicked() {
-                    add_row(&mut self.state);
-                }
-                let mut table = CompanyTable::new(&mut self.state.vec);
-                ScrollArea::horizontal().show(ui, |ui| {
-                    table.table_ui(ui);
-                });
                 ui.horizontal(|ui| {
-                    if let Mode::Add = &self.state.mode {
-                        if ui.button("Save").clicked() {
-                            save_all(self.db.clone(), &mut self.state, self.tx.clone());
-                            self.state.mode = Mode::Normal;
-                        }
+                    if ui.button("Add row").clicked() {
+                        add_row(&mut self.state);
                     }
 
-                    if !matches!(self.state.mode, Mode::Normal) && ui.button("Cancel").clicked() {
-                        remove_non_constant(&mut self.state.vec);
-                        self.state.mode = Mode::Normal;
+                    let button = ui.add_enabled(
+                        !self.state.selected_rows.is_empty(),
+                        egui::Button::new("Delete"),
+                    );
+                    if button.clicked() {
+                        delete_selected(self.db.clone(), &mut self.state, self.tx.clone());
                     }
-                })
+                });
+                use egui_extras::{Size, StripBuilder};
+                StripBuilder::new(ui)
+                    .size(Size::remainder().at_least(100.0))
+                    .vertical(|mut strip| {
+                        strip.cell(|ui| {
+                            let mut table = CompanyTable::new(
+                                &mut self.state.vec,
+                                &mut self.state.selected_rows,
+                            );
+                            egui::ScrollArea::horizontal().show(ui, |ui| {
+                                table.table_ui(ui);
+                            });
+                            ui.horizontal(|ui| {
+                                if let Mode::Add = &self.state.mode {
+                                    if ui.button("Save").clicked() {
+                                        save_all(self.db.clone(), &mut self.state, self.tx.clone());
+                                        self.state.mode = Mode::Normal;
+                                    }
+                                }
+
+                                if !matches!(self.state.mode, Mode::Normal)
+                                    && ui.button("Cancel").clicked()
+                                {
+                                    remove_non_constant(&mut self.state.vec);
+                                    self.state.mode = Mode::Normal;
+                                }
+                            });
+                        });
+                    });
             });
         });
     }
@@ -174,6 +217,29 @@ fn add_row(state: &mut State) {
 
 fn remove_non_constant(vec: &mut Vec<Row>) {
     vec.retain(|x| matches!(x, Row::Constant(_)))
+}
+
+fn delete_selected(db: SqlitePool, state: &mut State, tx: Sender<Operation>) {
+    let row_ids: Vec<_> = state
+        .vec
+        .iter()
+        .enumerate()
+        .filter(|(i, row)| state.selected_rows.contains(i) && matches!(row, Row::Constant(_)))
+        .map(|(_, row)| row.constant().id)
+        .collect();
+
+    tokio::spawn(async move {
+        let mut ids_deleted = Vec::new();
+        for id in row_ids {
+            delete_company(db.clone(), id).await.unwrap();
+
+            ids_deleted.push(id);
+        }
+
+        tx.send(Operation::Delete {
+            deleted_companies: ids_deleted,
+        })
+    });
 }
 
 fn fetch_all(db: SqlitePool, tx: Sender<Operation>) {

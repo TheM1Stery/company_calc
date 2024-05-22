@@ -5,11 +5,18 @@ use super::{model::Company, Row};
 
 pub struct CompanyTable<'a> {
     rows: &'a mut Vec<Row>,
+    selected_rows: &'a mut std::collections::HashSet<usize>,
 }
 
 impl<'a> CompanyTable<'a> {
-    pub fn new(rows: &'a mut Vec<Row>) -> CompanyTable<'a> {
-        Self { rows }
+    pub fn new(
+        rows: &'a mut Vec<Row>,
+        selected_rows: &'a mut std::collections::HashSet<usize>,
+    ) -> CompanyTable<'a> {
+        Self {
+            rows,
+            selected_rows,
+        }
     }
 
     pub fn table_ui(&mut self, ui: &mut egui::Ui) {
@@ -18,27 +25,33 @@ impl<'a> CompanyTable<'a> {
         let builder = TableBuilder::new(ui)
             .striped(true)
             .resizable(true)
+            .sense(egui::Sense::click())
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+            .column(Column::initial(25.0).at_least(25.0).at_most(30.0))
             .column(Column::auto())
-            .column(Column::auto())
-            .column(Column::auto())
-            .column(Column::auto())
-            .column(Column::remainder())
+            .columns(Column::initial(100.0).at_least(100.0).at_most(250.0), 3)
             .min_scrolled_height(0.0)
             .max_scroll_height(available_height);
 
         builder
             .header(20.0, |mut header| {
                 header.col(|ui| {
-                    ui.strong("Код");
+                    ui.vertical_centered(|ui| {
+                        ui.strong("Код");
+                        ui.separator();
+                    });
                 });
 
                 header.col(|ui| {
-                    ui.strong("Наименование");
+                    ui.vertical_centered(|ui| {
+                        ui.strong("Наименование");
+                        ui.separator();
+                    });
                 });
-                header.col(|ui| multi_header(ui, "Остаток на начало месяца", ["Дебет", "Кредит"]));
-                header.col(|ui| multi_header(ui, "Оборот за месяц", ["Дебет", "Кредит"]));
-                header.col(|ui| multi_header(ui, "Остаток на конец", ["Дебет", "Кредит"]));
+                let cols = ["Дебет", "Кредит"];
+                header.col(|ui| multi_header(ui, "Остаток на начало месяца", Some(cols)));
+                header.col(|ui| multi_header(ui, "Оборот за месяц", Some(cols)));
+                header.col(|ui| multi_header(ui, "Остаток на конец", Some(cols)));
             })
             .body(|body| {
                 let row_height = 18.0;
@@ -46,7 +59,9 @@ impl<'a> CompanyTable<'a> {
                     let index = row.index();
                     match &mut self.rows[index] {
                         Row::Constant(company) => {
+                            row.set_selected(self.selected_rows.contains(&index));
                             row_constant(&mut row, company);
+                            self.toggle_selection(index, &row.response());
                         }
                         Row::BeingEdited(_) => todo!(),
                         Row::New(new_company) => {
@@ -96,6 +111,17 @@ impl<'a> CompanyTable<'a> {
                 });
             });
     }
+
+    fn toggle_selection(&mut self, row_index: usize, row_response: &egui::Response) {
+        if row_response.clicked() {
+            if self.selected_rows.contains(&row_index) {
+                self.selected_rows.remove(&row_index);
+                return;
+            }
+
+            self.selected_rows.insert(row_index);
+        }
+    }
 }
 
 fn row_constant(row: &mut TableRow, company: &Company) {
@@ -144,17 +170,19 @@ fn row_constant(row: &mut TableRow, company: &Company) {
 
 fn row_editable() {}
 
-fn multi_header(ui: &mut Ui, title: &str, cols: [&str; 2]) {
+fn multi_header(ui: &mut Ui, title: &str, cols: Option<[&str; 2]>) {
     ui.vertical_centered(|ui| {
         ui.strong(title);
-        ui.add(egui::Separator::default().horizontal());
-        ui.columns(2, |columns| {
-            columns[0].vertical_centered(|ui| {
-                ui.strong(cols[0]);
+        ui.separator();
+        if let Some(cols) = cols {
+            ui.columns(2, |columns| {
+                columns[0].vertical_centered(|ui| {
+                    ui.strong(cols[0]);
+                });
+                columns[1].vertical_centered(|ui| {
+                    ui.strong(cols[1]);
+                });
             });
-            columns[1].vertical_centered(|ui| {
-                ui.strong(cols[1]);
-            });
-        });
+        }
     });
 }
