@@ -1,4 +1,4 @@
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Company {
     pub id: i64,
     pub name: String,
@@ -8,6 +8,7 @@ pub struct Company {
     pub remainder_end_month: f64,
 }
 
+#[derive(Debug)]
 pub struct EditedCompany {
     pub id: i64,
     pub name: String,

@@ -1,7 +1,7 @@
 use egui::Ui;
 use egui_extras::{Column, TableBuilder, TableRow};
 
-use super::{model::Company, Row};
+use super::{model::Company, EditedCompanyRow, Row};
 
 pub struct CompanyTable<'a> {
     rows: &'a mut Vec<Row>,
@@ -63,7 +63,9 @@ impl<'a> CompanyTable<'a> {
                             row_constant(&mut row, company);
                             self.toggle_selection(index, &row.response());
                         }
-                        Row::BeingEdited(_) => todo!(),
+                        Row::BeingEdited(edit_company) => {
+                            row_editable(&mut row, edit_company);
+                        }
                         Row::New(new_company) => {
                             row.col(|ui| {
                                 ui.label("");
@@ -106,7 +108,48 @@ impl<'a> CompanyTable<'a> {
                                 });
                             });
                         }
-                        Row::Total => todo!(),
+                        Row::Total(total) => {
+                            row.col(|ui| {
+                                ui.label("");
+                            });
+
+                            row.col(|ui| {
+                                ui.label("ИТОГО");
+                            });
+
+                            row.col(|ui| {
+                                ui.columns(2, |columns| {
+                                    columns[0].vertical_centered(|ui| {
+                                        ui.label(format!("{}", total.remainder_begin_month_pos));
+                                    });
+                                    columns[1].vertical_centered(|ui| {
+                                        ui.label(format!("{}", total.remainder_begin_month_neg));
+                                    });
+                                });
+                            });
+
+                            row.col(|ui| {
+                                ui.columns(2, |columns| {
+                                    columns[0].vertical_centered(|ui| {
+                                        ui.label(format!("{}", total.debit_turnover))
+                                    });
+                                    columns[1].vertical_centered(|ui| {
+                                        ui.label(format!("{}", total.credit_turnover))
+                                    });
+                                });
+                            });
+
+                            row.col(|ui| {
+                                ui.columns(2, |columns| {
+                                    columns[0].vertical_centered(|ui| {
+                                        ui.label(format!("{}", total.remainder_end_month_pos));
+                                    });
+                                    columns[1].vertical_centered(|ui| {
+                                        ui.label(format!("{}", total.remainder_end_month_neg));
+                                    });
+                                });
+                            });
+                        }
                     }
                 });
             });
@@ -168,7 +211,44 @@ fn row_constant(row: &mut TableRow, company: &Company) {
     });
 }
 
-fn row_editable() {}
+fn row_editable(row: &mut TableRow, edit_company: &mut EditedCompanyRow) {
+    row.col(|ui| {
+        ui.label(format!("{}", edit_company.id));
+    });
+
+    row.col(|ui| {
+        ui.text_edit_singleline(&mut edit_company.name);
+    });
+
+    row.col(|ui| {
+        ui.columns(3, |columns| {
+            if columns[0]
+                .text_edit_singleline(&mut edit_company.remainder_begin_month_pos)
+                .changed()
+            {
+                edit_company.remainder_begin_month_neg.clear();
+            }
+
+            columns[1].add(egui::Separator::default().vertical());
+            if columns[2]
+                .text_edit_singleline(&mut edit_company.remainder_begin_month_neg)
+                .changed()
+            {
+                edit_company.remainder_begin_month_pos.clear();
+            }
+        });
+    });
+
+    row.col(|ui| {
+        ui.columns(3, |columns| {
+            columns[0].text_edit_singleline(&mut edit_company.debit_turnover);
+            columns[1].add(egui::Separator::default().vertical());
+            columns[2].text_edit_singleline(&mut edit_company.credit_turnover);
+        });
+    });
+}
+
+fn row_addable() {}
 
 fn multi_header(ui: &mut Ui, title: &str, cols: Option<[&str; 2]>) {
     ui.vertical_centered(|ui| {

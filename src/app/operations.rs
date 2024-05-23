@@ -1,19 +1,23 @@
 use sqlx::SqlitePool;
 
-use super::model::{Company, EditedCompany, NewCompany};
+use super::{
+    model::{Company, EditedCompany, NewCompany},
+    TotalRow,
+};
 
 pub enum Operation {
     Add {
         new_companies: Vec<Company>,
     },
-    Edit {
-        edited_company: Company,
-    },
+    Edit,
     FetchAll {
         all_companies: Result<Vec<Company>, sqlx::Error>,
     },
     Delete {
-        deleted_companies: Vec<i64>,
+        deleted_companies: std::collections::HashSet<i64>,
+    },
+    Total {
+        total: TotalRow,
     },
 }
 
@@ -70,6 +74,15 @@ pub async fn edit_company(
         credit_turnover,
     }: EditedCompany,
 ) -> Result<Company, sqlx::Error> {
+    let remainder_type = match remainder_begin_month {
+        v if v > 0. => RemainderType::Debit,
+        v if v < 0. => RemainderType::Credit,
+        _ => RemainderType::Debit,
+    };
+    let remainder = match remainder_type {
+        RemainderType::Debit => remainder_begin_month - credit_turnover,
+        RemainderType::Credit => remainder_begin_month + debit_turnover,
+    };
     sqlx::query!(
         r#"UPDATE company
         SET name = ?,
@@ -82,7 +95,7 @@ pub async fn edit_company(
         remainder_begin_month,
         debit_turnover,
         credit_turnover,
-        0.,
+        remainder,
         id
     )
     .execute(&db)

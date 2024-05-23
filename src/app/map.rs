@@ -57,6 +57,10 @@ pub fn map_to_edited(
         }
         _ => 0.0,
     };
+    if name.is_empty() {
+        return Err("no empty string".into());
+    }
+
     let parsed_debit: f64 = debit_turnover.parse()?;
 
     let parsed_credit: f64 = credit_turnover.parse()?;
