@@ -206,7 +206,12 @@ impl eframe::App for MyApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
-                    if ui.button("Add row").clicked() {
+                    let add_button = ui.add_enabled(
+                        matches!(self.state.mode, Mode::Normal),
+                        egui::Button::new("Add row"),
+                    );
+
+                    if add_button.clicked() {
                         add_row(&mut self.state);
                     }
 
